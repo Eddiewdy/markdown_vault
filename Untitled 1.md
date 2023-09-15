@@ -1,0 +1,1 @@
+podman run -i -t -v ~/.:/root/wangyidi localhost/chipyard-slim /bin/bash

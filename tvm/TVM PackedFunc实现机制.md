@@ -1,3 +1,9 @@
+
+
+https://hjchen2.github.io/2020/01/10/TVM-PackedFunc%E5%AE%9E%E7%8E%B0%E6%9C%BA%E5%88%B6/
+
+https://zhuanlan.zhihu.com/p/367541496
+
 ## TVM PackedFunc实现
 
 为了便于Python和C++混合编程，TVM使用了统一的PackedFunc机制。PackedFunc可以将C++中的各类函数打包成统一的函数接口，并自动导出到Python模块中进行调用，并且也支持从Python中注册一个函数，并伪装成PackedFunc在C++和Python中调用。
@@ -156,6 +162,15 @@ int TVMFuncCall(...);
 #ifdef __cplusplus
 }  // TVM_EXTERN_C
 #endif
+
+```
+
+当获得一个PackedFunc对象时，我们就可以像调用普通函数一样调用PackedFunc打包的函数。比如：
+
+```c++
+PackedFunc f;
+// f(1, 2)首先会自动将参数1，2打包成TVMArgs，接着调用CallPacked，CallPacked最终的执行体是body_
+TVMRetValue ret = f(1, 2);
 ```
 
 ## 二、加载TVM动态库
@@ -184,7 +199,7 @@ def _load_lib():
 _LIB, _LIB_NAME = _load_lib()
 ```
 
-上面的lib_path[0]是TVM动态链接库的全路径名称，我是在linux系统做的试验，链接库的名称是/xxx/libtvm.so（不同的系统动态库的名字会有所不同，windows系统是.dll，苹果系统是.dylib，linux系统是.so），在_load_lib函数执行完成后，_LIB和_LIB_NAME都完成了初始化，其中_LIB是一个ctypes.CDLL类型的变量，可以认为它是能够操作TVM动态链接库的export symbols的一个全局句柄，_LIB_NAME是libtvm.so这个字符串。这样后续在python中，我们就能通过_LIB这个桥梁不断的和c++的部分进行交互。
+上面的lib_path[0]是TVM动态链接库的全路径名称，我是在linux系统做的试验，链接库的名称是/xxx/libtvm.so（不同的系统动态库的名字会有所不同，windows系统是.dll，苹果系统是.dylib，linux系统是.so），在_load_lib函数执行完成后，_LIB和\_LIB_NAME都完成了初始化，其中\_LIB是一个ctypes.CDLL类型的变量，可以认为它是能够操作TVM动态链接库的export symbols的一个全局句柄，\_LIB_NAME是libtvm.so这个字符串。这样后续在python中，我们就能通过_LIB这个桥梁不断的和c++的部分进行交互。
 
 ## 三、python怎么关联c++的PackedFunc
 
@@ -196,7 +211,7 @@ python中来获取c++API的底层函数是_get_global_func：
 # python/tvm/_ffi/_ctypes/packed_func.py
 def _get_global_func(func_name):
     handle = ctypes.c_void_p()
-    _LIB.TVMFuncGetGlobal(c_str(name), ctypes.byref(handle))
+    check_call(_LIB.TVMFuncGetGlobal(c_str(name), ctypes.byref(handle)))
     return _make_packed_func(handle, False)
 ```
 
@@ -210,14 +225,29 @@ _get_global_func中调用了TVMFuncGetGlobal这个API，看下这个API的实现
 
 ```c++
 // src/runtime/registry.cc
+//int TVMFuncGetGlobal(const char* name, TVMFunctionHandle* out) {
+//  const tvm::runtime::PackedFunc* fp 
+//      = tvm::runtime::Registry::Get(name);
+//  *out = new tvm::runtime::PackedFunc(*fp);
+//}
 int TVMFuncGetGlobal(const char* name, TVMFunctionHandle* out) {
-  const tvm::runtime::PackedFunc* fp 
-      = tvm::runtime::Registry::Get(name);
-  *out = new tvm::runtime::PackedFunc(*fp);
+  API_BEGIN();
+  const tvm::runtime::PackedFunc* fp = tvm::runtime::Registry::Get(name);
+  if (fp != nullptr) {
+    tvm::runtime::TVMRetValue ret;
+    ret = *fp;
+    TVMValue val;
+    int type_code;
+    ret.MoveToCHost(&val, &type_code);
+    *out = val.v_handle;
+  } else {
+    *out = nullptr;
+  }
+  API_END();
 }
 ```
 
-和c++PackedFunc的关联工作这时候才完成一半，在_get_global_func的最后调用了_make_packed_func这个函数：
+和c++PackedFunc的关联工作这时候才完成一半，在\_get_global_func的最后调用了_make_packed_func这个函数：
 
 ```python
 # python/tvm/_ffi/_ctypes/packed_func.py

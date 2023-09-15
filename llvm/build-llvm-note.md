@@ -1,3 +1,7 @@
+apple m1 芯片的libzstd库文件的位置在/opt/homebrew/lib
+
+`export DYLD_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_LIBRARY_PATH`
+
 ```cmake
 cmake -G Unix Makefiles -DCMAKE_BUILD_TYPE=DEBUG -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_OSX_ARCHITECTURES="arm64" ../llvm
 ```
